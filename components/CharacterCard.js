@@ -1,4 +1,4 @@
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 
 // Map a character's status to a colored dot, so the UI communicates
 // state visually instead of relying on text alone.
@@ -13,13 +13,17 @@ function statusColor(status) {
   }
 }
 
-// A single character shown as a card. It receives one `character` object
-// and is responsible only for displaying it — no data fetching here.
-export default function CharacterCard({ character }) {
+// A single character shown as a tappable card. It receives one `character`
+// object and an `onPress` handler — it displays data and reports taps, but
+// owns no navigation logic itself.
+export default function CharacterCard({ character, onPress }) {
   const { name, status, species, gender, image } = character;
 
   return (
-    <View style={styles.card}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+    >
       <Image source={{ uri: image }} style={styles.image} />
       <View style={styles.info}>
         <Text style={styles.name}>{name}</Text>
@@ -31,7 +35,7 @@ export default function CharacterCard({ character }) {
           <Text style={styles.meta}>{status}</Text>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -50,6 +54,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
+  },
+  pressed: {
+    opacity: 0.6,
   },
   image: {
     width: 90,
