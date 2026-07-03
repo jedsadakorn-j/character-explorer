@@ -1,4 +1,6 @@
 import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useFavorites } from '../context/FavoritesContext.js';
 
 // Map a character's status to a colored dot, so the UI communicates
 // state visually instead of relying on text alone.
@@ -13,11 +15,13 @@ function statusColor(status) {
   }
 }
 
-// A single character shown as a tappable card. It receives one `character`
-// object and an `onPress` handler — it displays data and reports taps, but
-// owns no navigation logic itself.
+// A single character shown as a tappable card. Tapping the card triggers
+// `onPress` (navigation); tapping the heart toggles favorite state, which
+// lives in the FavoritesContext (shared across the whole app).
 export default function CharacterCard({ character, onPress }) {
-  const { name, status, species, gender, image } = character;
+  const { id, name, status, species, gender, image } = character;
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const favorite = isFavorite(id);
 
   return (
     <Pressable
@@ -35,6 +39,21 @@ export default function CharacterCard({ character, onPress }) {
           <Text style={styles.meta}>{status}</Text>
         </View>
       </View>
+
+      {/* Nested Pressable: it becomes the touch responder, so tapping the
+          heart toggles favorite WITHOUT also triggering the card's onPress.
+          hitSlop enlarges the tap area beyond the small icon. */}
+      <Pressable
+        onPress={() => toggleFavorite(character)}
+        hitSlop={12}
+        style={styles.heart}
+      >
+        <Ionicons
+          name={favorite ? 'heart' : 'heart-outline'}
+          size={26}
+          color={favorite ? '#e91e63' : '#c0c0c0'}
+        />
+      </Pressable>
     </Pressable>
   );
 }
@@ -66,6 +85,7 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
     marginLeft: 14,
+    marginRight: 30, // leave room for the heart
   },
   name: {
     fontSize: 18,
@@ -86,5 +106,10 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     marginRight: 6,
+  },
+  heart: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
   },
 });

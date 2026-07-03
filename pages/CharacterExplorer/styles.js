@@ -40,4 +40,13 @@ export const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 24,
   },
+  footer: {
+    marginVertical: 20,
+  },
+  footerText: {
+    textAlign: 'center',
+    color: '#555',
+    marginVertical: 20,
+    fontSize: 14,
+  },
 });

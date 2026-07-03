@@ -1,6 +1,7 @@
 import { View, FlatList, Text, TextInput, ActivityIndicator, Button } from 'react-native';
 import { useState, useEffect } from 'react';
 import CharacterCard from '../../components/CharacterCard.js';
+import StatusChips from '../../components/StatusChips.js';
 import { useCharacters } from '../../hooks/useCharacters.js';
 import { styles } from './styles.js';
 
@@ -9,16 +10,16 @@ export default function CharacterExplorer({ navigation }) {
   // user pauses. Keeping them separate is what makes debouncing possible.
   const [searchText, setSearchText] = useState('');
   const [query, setQuery] = useState('');
+  const [status, setStatus] = useState(''); // '' = all
 
-  // Debounce: wait 400ms after the last keystroke before committing the
-  // query. The cleanup cancels the pending timer on each new keystroke, so
-  // we only fire one API request instead of one per letter.
+  // Debounce: wait 400ms after the last keystroke before committing the query.
   useEffect(() => {
     const timer = setTimeout(() => setQuery(searchText.trim()), 400);
     return () => clearTimeout(timer);
   }, [searchText]);
 
-  const { data, isLoading, refreshing, error, refresh } = useCharacters(query);
+  const { data, isLoading, isLoadingMore, refreshing, error, hasMore, loadMore, refresh } =
+    useCharacters({ query, status });
 
   function renderBody() {
     if (isLoading) {
@@ -36,7 +37,7 @@ export default function CharacterExplorer({ navigation }) {
     if (data.length === 0) {
       return (
         <View style={styles.centered}>
-          <Text style={styles.emptyText}>No characters found for “{query}”.</Text>
+          <Text style={styles.emptyText}>No characters match your filters.</Text>
         </View>
       );
     }
@@ -54,6 +55,17 @@ export default function CharacterExplorer({ navigation }) {
         refreshing={refreshing}
         onRefresh={refresh}
         keyboardShouldPersistTaps="handled"
+        // Infinite scroll: fire loadMore when the user is within half a screen
+        // of the bottom. The hook itself guards against firing with no next page.
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          isLoadingMore ? (
+            <ActivityIndicator style={styles.footer} color="rgb(74, 80, 80)" />
+          ) : !hasMore ? (
+            <Text style={styles.footerText}>You've reached the end 🛸</Text>
+          ) : null
+        }
       />
     );
   }
@@ -68,6 +80,7 @@ export default function CharacterExplorer({ navigation }) {
         autoCorrect={false}
         clearButtonMode="while-editing"
       />
+      <StatusChips value={status} onChange={setStatus} />
       {renderBody()}
     </View>
   );

@@ -1,53 +1,118 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const BASE_URL = 'https://rickandmortyapi.com/api/character';
 
-// Custom hook: owns everything about *fetching characters* for a given
-// search query. The UI just calls it and renders the returned state.
-// Passing `query` in makes the hook re-fetch whenever the search changes.
-export function useCharacters(query) {
+// Data hook for the character list. It owns fetching, filtering (name + status),
+// and pagination. Callers pass the current filters and get back state plus a
+// loadMore() to append the next page.
+export function useCharacters({ query = '', status = '' } = {}) {
   const [data, setData] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [info, setInfo] = useState(null); // API pagination meta: { count, pages, next, prev }
+  const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true); // first page
+  const [isLoadingMore, setIsLoadingMore] = useState(false); // next pages
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  const load = useCallback(async () => {
-    try {
-      const url = query ? `${BASE_URL}/?name=${encodeURIComponent(query)}` : BASE_URL;
-      const response = await fetch(url);
+  // Holds the AbortController for the in-flight request. Sharing it in a ref
+  // lets a filter change cancel BOTH the first-page fetch and any load-more.
+  const abortRef = useRef(null);
 
-      // The Rick & Morty API returns 404 when a name search matches nothing.
-      // That's an empty result for us, not a real error.
-      if (response.status === 404) {
+  const buildUrl = useCallback(
+    (pageNum) => {
+      let url = `${BASE_URL}/?page=${pageNum}`;
+      if (query) url += `&name=${encodeURIComponent(query)}`;
+      if (status) url += `&status=${encodeURIComponent(status)}`;
+      return url;
+    },
+    [query, status]
+  );
+
+  // Fetch a single page. Returns { results, info }. Treats the API's 404
+  // ("no matches") as an empty result rather than an error.
+  const fetchPage = useCallback(
+    async (pageNum, signal) => {
+      const response = await fetch(buildUrl(pageNum), { signal });
+      if (response.status === 404) return { results: [], info: null };
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+      return response.json();
+    },
+    [buildUrl]
+  );
+
+  // Whenever the filters change, cancel any in-flight request and reload page 1.
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setIsLoading(true);
+    setError(null);
+    fetchPage(1, controller.signal)
+      .then((json) => {
+        setData(json.results);
+        setInfo(json.info);
+        setPage(1);
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return; // a newer request superseded this one
+        setError(err.message);
         setData([]);
-        setError(null);
-        return;
-      }
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
+        setInfo(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
 
-      const json = await response.json();
+    // Cleanup runs on unmount AND before the next effect (filters changed).
+    return () => controller.abort();
+  }, [fetchPage]);
+
+  // Append the next page. Called by FlatList's onEndReached.
+  const loadMore = useCallback(async () => {
+    // Skip if already busy, or if the API says there's no next page.
+    if (isLoading || isLoadingMore || !info?.next) return;
+
+    const nextPage = page + 1;
+    setIsLoadingMore(true);
+    try {
+      const json = await fetchPage(nextPage, abortRef.current?.signal);
+      setData((prev) => [...prev, ...json.results]);
+      setInfo(json.info);
+      setPage(nextPage);
+    } catch (err) {
+      if (err.name !== 'AbortError') setError(err.message);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [fetchPage, info, page, isLoading, isLoadingMore]);
+
+  // Pull-to-refresh: reload page 1 with a fresh controller.
+  const refresh = useCallback(async () => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setRefreshing(true);
+    try {
+      const json = await fetchPage(1, controller.signal);
       setData(json.results);
+      setInfo(json.info);
+      setPage(1);
       setError(null);
     } catch (err) {
-      setError(err.message);
-      setData([]);
+      if (err.name !== 'AbortError') setError(err.message);
+    } finally {
+      setRefreshing(false);
     }
-  }, [query]);
+  }, [fetchPage]);
 
-  // Re-run whenever `load` changes (i.e. whenever `query` changes).
-  useEffect(() => {
-    setIsLoading(true);
-    load().finally(() => setIsLoading(false));
-  }, [load]);
-
-  // Pull-to-refresh / retry: same fetch, different spinner.
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }, [load]);
-
-  return { data, isLoading, refreshing, error, refresh };
+  return {
+    data,
+    isLoading,
+    isLoadingMore,
+    refreshing,
+    error,
+    hasMore: Boolean(info?.next),
+    loadMore,
+    refresh,
+  };
 }
